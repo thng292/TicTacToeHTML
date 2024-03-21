@@ -2,24 +2,24 @@ package main
 
 import (
 	"fmt"
-	"html/template"
 	"math"
+	"os"
 )
-
-var boardState [9]int8
 
 type State int8
 
 // We play as X
 const (
-	Playing State = 1
-	XWon    State = 'X'
-	OWon    State = 'O'
-	Draw    State = 3
-	Empty   State = '_'
+	Playing  State = 1
+	XMachine State = 'X'
+	OPlayer  State = 'O'
+	Draw     State = 3
+	Empty    State = '_'
 )
 
-var board_template *template.Template = nil
+var boardState [9]State
+
+// var board_template *template.Template = nil
 
 type Move struct {
 	index uint8
@@ -27,53 +27,54 @@ type Move struct {
 }
 
 var result map[string]Move = make(map[string]Move)
+var done map[string]bool = make(map[string]bool)
 
-func findBestMove(player int8, depth int) (index uint8, score int) {
-	// serialized := serialize()
-	// if move, ok := result[serialized]; ok {
-	// return move.index, move.score
-	// }
+func findBestMove(player State, depth int) (index uint8, score int) {
+	serialized := serialize()
+	if move, ok := result[serialized]; ok {
+		return move.index, move.score
+	}
 	state := getState()
 	if state != Playing {
-		if state == XWon {
+		if state == XMachine {
 			return 0, 10 - depth
-		} else if state == OWon {
+		} else if state == OPlayer {
 			return 0, depth - 10
 		} else {
 			return 0, 0
 		}
 	}
-	if player == int8(XWon) { // X (Machine)
+	if player == XMachine { // X (Machine)
 		var max_i uint8 = 0
 		max_score := math.MinInt
 		for i, cell := range boardState {
-			if cell == int8(Empty) {
-				boardState[i] = int8(XWon)
-				_, score := findBestMove(int8(OWon), depth+1)
+			if cell == Empty {
+				boardState[i] = XMachine
+				_, score := findBestMove(OPlayer, depth+1)
 				if score > max_score {
 					max_i = uint8(i)
 					max_score = score
 				}
-				boardState[i] = int8(Empty)
+				boardState[i] = Empty
 			}
 		}
-		// result[serialized] = Move{index: max_i, score: max_score}
+		result[serialized] = Move{index: max_i, score: max_score}
 		return max_i, max_score
 	} else { // O (Human)
 		var min_i uint8 = 0
 		min_score := math.MaxInt
 		for i, cell := range boardState {
-			if cell == int8(Empty) {
-				boardState[i] = int8(OWon)
-				_, score := findBestMove(int8(XWon), depth+1)
+			if cell == Empty {
+				boardState[i] = OPlayer
+				_, score := findBestMove(XMachine, depth+1)
 				if score < min_score {
 					min_i = uint8(i)
 					min_score = score
 				}
-				boardState[i] = int8(Empty)
+				boardState[i] = Empty
 			}
 		}
-		// result[serialized] = Move{index: min_i, score: min_score}
+		result[serialized] = Move{index: min_i, score: min_score}
 		return min_i, min_score
 	}
 }
@@ -82,9 +83,9 @@ func serialize() string {
 	result := ""
 	for _, cell := range boardState {
 		switch cell {
-		case int8(OWon):
+		case OPlayer:
 			result += "O"
-		case int8(XWon):
+		case XMachine:
 			result += "X"
 		default:
 			result += "_"
@@ -93,64 +94,82 @@ func serialize() string {
 	return result
 }
 
+func writeFile() {
+	current_board := serialize()
+	if _, ok := done[current_board]; ok {
+		return
+	}
+	// fmt.Printf("Doing %v\n", current_board)
+	done[current_board] = true
+	outf, err := os.Create("moves/" + current_board + ".html")
+	if err != nil {
+		panic(err)
+	}
+	// fmt.Printf("Before write: %v\n", serialize())
+	outf.WriteString(toHTML())
+	// fmt.Printf("After write: %v\n", serialize())
+	outf.Close()
+}
+
 func produce() {
+	// print("Start==================\n")
+	// defer print("End====================\n")
+	now := serialize()
+	fmt.Printf("Now: %v\n", now)
+	if getState() != Playing {
+		return
+	}
 	for i, cell := range boardState {
-		if cell == int8(Empty) {
-			boardState[i] = int8(OWon)
-			// current_board := serialize()
-			// outf, err := os.Create("moves/" + current_board + ".html")
-			// if err != nil {
-			// 	panic(err)
-			// }
-			machineMove, _ := findBestMove(int8(XWon), 0)
-			boardState[machineMove] = int8(XWon)
-			// outf.WriteString(toHTML())
-			// outf.Close()
-			produce()
-			boardState[i] = int8(Empty)
-			boardState[machineMove] = int8(Empty)
+		if cell == Empty {
+			boardState[i] = OPlayer
+			machineMove, _ := findBestMove(XMachine, 0)
+			if boardState[machineMove] == Empty {
+				boardState[machineMove] = XMachine
+			} else {
+				machineMove = math.MaxInt8
+			}
+			// =================
+			writeFile()
+			if getState() == Playing {
+				produce()
+				// fmt.Printf("Backed to: %v\n", now)
+			}
+			// =================
+			if machineMove != math.MaxInt8 {
+				boardState[machineMove] = Empty
+			}
+			boardState[i] = Empty
 		}
 	}
 }
 
 func main() {
 	for i := range boardState {
-		boardState[i] = int8(Empty)
-	}
-	// boardState[0] = int8(OWon)
-	// boardState[3] = int8(XWon)
-	// boardState[4] = int8(OWon)
-	// boardState[6] = int8(XWon)
-	// boardState[7] = int8(OWon)
-	// boardState[8] = int8(XWon)
-	// print(findBestMove(int8(XWon), 0))
-	boardState[4] = int8(OWon)
-	current := XWon
-	for getState() == Playing {
-		move, _ := findBestMove(int8(current), 0)
-		println(move)
-		boardState[move] = int8(current)
-		if current == XWon {
-			current = OWon
-		} else {
-			current = XWon
-		}
+		boardState[i] = Empty
 	}
 
-	// produce()
-	// count := 100
-	// for k, v := range result {
-	// 	fmt.Printf("%v: %v\n", k, v)
-	// 	count -= 1
-	// 	if count == 0 {
-	// 		break
-	// 	}
-	// }
+	// boardState[0] = OPlayer
+	// boardState[1] = OPlayer
+	// boardState[2] = XMachine
+
+	// boardState[4] = XMachine
+	// boardState[6] = OPlayer
+
+	// println(findBestMove(XMachine, 0))
+
+	outf, err := os.Create("moves/index.html")
+	if err != nil {
+		panic(err)
+	}
+	outf.WriteString(toHTML())
+	outf.Close()
+	produce()
+
 }
 
 // getState determines the current game state based on the board
 func getState() State {
-	checkWin := func(board [9]int8, player int8) bool {
+	checkWin := func(board [9]State, player State) bool {
 		// Check rows
 		for i := 0; i < 3; i++ {
 			if board[i*3] == player && board[i*3+1] == player && board[i*3+2] == player {
@@ -175,24 +194,24 @@ func getState() State {
 		return false
 	}
 
-	allEmpty := func(board [9]int8) bool {
+	allPlayed := func(board [9]State) bool {
 		for _, cell := range board {
-			if cell != int8(Empty) {
+			if cell == Empty {
 				return false
 			}
 		}
 		return true
 	}
 	// Check for win
-	if checkWin(boardState, int8(XWon)) {
-		return XWon
+	if checkWin(boardState, XMachine) {
+		return XMachine
 	}
-	if checkWin(boardState, int8(OWon)) {
-		return OWon
+	if checkWin(boardState, OPlayer) {
+		return OPlayer
 	}
 
 	// Check for draw
-	if allEmpty(boardState) {
+	if allPlayed(boardState) {
 		return Draw
 	}
 
@@ -201,26 +220,46 @@ func getState() State {
 }
 
 func toHTML() string {
-	result := `<title>Tic tac toe</title><meta name="viewport" content="width=device-width, initial-scale=3.0"><table>`
+	result := `<title>Tic-tac-toe HTML</title><meta name="viewport" content="width=device-width, initial-scale=30.0"><table>`
 	footer := `</table>`
 	// print(serialize())
+	current_state := getState()
 	for i := 0; i < 3; i += 1 {
 		result += `<tr>`
 		for j := 0; j < 3; j += 1 {
 			result += `<td>`
-			if boardState[i*3+j] != int8(Empty) {
+			if boardState[i*3+j] != Empty {
 				result += string(boardState[i*3+j])
-			} else if getState() == Playing {
-				boardState[i*3+j] = int8(OWon)
-				index, _ := findBestMove(int8(XWon), 0)
-				boardState[index] = int8(XWon)
+			} else if current_state == Playing {
+				boardState[i*3+j] = OPlayer
+				index, _ := findBestMove(XMachine, 0)
+				if boardState[index] == Empty {
+					boardState[index] = XMachine
+				} else {
+					index = math.MaxInt8
+				}
 				result += fmt.Sprintf(`<a href='%v'>_</a>`, serialize()+".html")
-				boardState[index] = int8(Empty)
-				boardState[i*3+j] = int8(Empty)
+				if index != math.MaxInt8 {
+					boardState[index] = Empty
+				}
+				boardState[i*3+j] = Empty
 			}
 			result += `</td>`
 		}
 		result += `</tr>`
 	}
-	return result + footer
+	result += footer
+	if current_state == XMachine {
+		result += "You lose"
+		result += `<a href='index.html'>Restart</a>`
+	}
+	if current_state == Draw {
+		result += "Draw"
+		result += `<a href='index.html'>Restart</a>`
+	}
+	if current_state == OPlayer {
+		result += "You win"
+		result += `<a href='index.html'>Restart</a>`
+	}
+	return result
 }
