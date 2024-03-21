@@ -1,4 +1,5 @@
-= Tic tac toe HTML
+# Tic tac toe HTML
 A full blown Tic-tac-toe game using only HTML
 
-= How to play
+# How to play
+https://thng292.github.io/TicTacToeHTML/
